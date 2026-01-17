@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<!-- saved from url=(0024)https://vttoth.com/RPPG/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <title>rPPG Demo</title>
+  <style>
+    html, body { margin: 0; background: #eee; font-family: sans-serif; text-align: center; }
+    .app { border: 1px solid gray; background: #fff; color: #111;   width: 800px; margin: auto; padding-bottom: 30px; }
+    #container { position: relative; width: 640px; height: 480px; margin: 2em auto; }
+    video, canvas { position: absolute; top: 0; left: 0; }
+    video { z-index: 0; transform: scaleX(-1); }
+    canvas { z-index: 1; pointer-events: none; }
+    #info { margin-top: 20px;   font-size: 1.5em; font-weight: bold; color: #28f; }
+    #startBtn { margin-top: 0.25em; padding: 0.5em 1em; font-size: 1em; border-radius: 8px; background-color: #eee; border-width: 1px; border-color: #aaa; }
+    #pulseContainer { margin-top: 1em; display: flex; justify-content: center; gap: 2em; }
+    .pulseLbl { font-size: 11px; color: #777; margin-bottom: 0.3em; }
+
+    .pulse-dot {
+      width: 40px;
+      height: 28px;
+      border-radius: 50%;
+      background: #fcf;
+      opacity: 0.6;
+      padding-top: 12px;
+      font-size: 12px;
+      color: #600;
+      transform: scale(1);
+    }
+
+    .valSD {
+      font-size: 10px;
+      margin-top: 5px;
+      height: 14px;
+    }
+
+@keyframes pulse {
+  0%   { transform: scale(1); opacity: 0.6; }
+  50%  { transform: scale(1.5); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.6; }
+}
+
+    #respDot { background: #0af; }
+
+    #circleProgress
+    {
+      width: 40px;
+      height: 28px;
+      border-radius: 50%;
+      background: conic-gradient(#0f0 0deg, #0f0 120deg, #333 120deg, #333 360deg);
+      color: red;
+      font-size: 12px;
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+ <div class="app">
+  <div id="container">
+    <video id="video" width="640" height="480" autoplay="" muted=""></video>
+    <canvas id="overlay" width="640" height="480"></canvas>
+  </div>
+  <button id="startBtn">Start Measurement</button>
+
+  <div id="pulseContainer">
+    <div><div class="pulseLbl">Time</div>
+      <div id="circleProgress" style="background: conic-gradient(rgb(0, 255, 0) 0deg, rgb(0, 255, 0) 120deg, rgb(221, 221, 238) 120deg, rgb(221, 221, 238) 360deg);">--.-s</div>
+    </div>
+    <div><div class="pulseLbl">HR</div><div id="heartDot" class="pulse-dot" title="Heart rate" style="transform: scale(1); opacity: 0.6;">--.-</div><div class="valSD" id="heartSD"></div>
+    </div>
+    <div><div class="pulseLbl">RR</div><div id="respDot" class="pulse-dot" title="Respiration rate" style="transform: scale(1); opacity: 0.6;">--.-</div><div class="valSD" id="respSD"></div>
+    </div>
+  </div>
+
+  <div id="info">Ready.</div>
+ </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const info = document.getElementById('info');
+    const startBtn = document.getElementById('startBtn');
+
+    const WIDTH = 640, HEIGHT = 480;
+    const ROI = { x: 200, y: 100, w: 240, h: 280 };
+    const FPS = 30;
+    const BUFFER_SIZE = 600;
+    const FFT_SIZE = 512;
+    const MEASUREMENT_DURATION_SEC = 60;
+
+    let signal = [];
+    let roiMask = [];
+    let bpmHistory = [];
+    let respHistory = [];
+    let measurementInterval = null;
+    let startTime = null;
+    let currentBPM = 0;
+    let currentRPM = 0;
+    let heartDot = null;
+    let respDot = null;
+
+    function createOvalMask()
+    {
+      const pixels = [];
+      for (let y = ROI.y; y < ROI.y + ROI.h; y++)
+      {
+        for (let x = ROI.x; x < ROI.x + ROI.w; x++)
+        {
+          const dx = (x - (ROI.x + ROI.w / 2)) / (ROI.w / 2);
+          const dy = (y - (ROI.y + ROI.h / 2)) / (ROI.h / 2);
+          const r2 = dx * dx + dy * dy;
+          if (r2 <= 1)
+          {
+            // Weight is highest in center, tapers to 0.5 at edge
+            const w = 0.5 + 0.5 * Math.exp(-4 * r2);
+            pixels.push([x, y, w]);
+          }
+        }
+      }
+      return pixels;
+    }
+
+    function fftMagReIm(re)
+    {
+      const N = re.length;
+      const im = new Array(N).fill(0);
+
+      function bitReverse(arr)
+      {
+        const n = arr.length, bits = Math.log2(n);
+        for (let i = 0; i < n; i++)
+        {
+          const j = parseInt(i.toString(2).padStart(bits, '0').split('').reverse().join(''), 2);
+          if (j > i) [arr[i], arr[j]] = [arr[j], arr[i]], [im[i], im[j]] = [im[j], im[i]];
+        }
+      }
+
+      bitReverse(re);
+
+      for (let len = 2; len <= N; len *= 2)
+      {
+        const angle = -2 * Math.PI / len;
+        for (let i = 0; i < N; i += len)
+        {
+          for (let j = 0; j < len / 2; j++)
+          {
+            const k = i + j;
+            const l = i + j + len / 2;
+            const tRe =  Math.cos(angle * j) * re[l] - Math.sin(angle * j) * im[l];
+            const tIm =  Math.sin(angle * j) * re[l] + Math.cos(angle * j) * im[l];
+            re[l] = re[k] - tRe;
+            im[l] = im[k] - tIm;
+            re[k] += tRe;
+            im[k] += tIm;
+          }
+        }
+      }
+
+      return re.map((r, i) => Math.sqrt(r * r + im[i] * im[i]));
+    }
+
+    function drawOverlay()
+    {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle = 'rgba(0,255,0,0.1)';
+      ctx.beginPath();
+      ctx.ellipse(ROI.x + ROI.w / 2, ROI.y + ROI.h / 2, ROI.w / 2, ROI.h / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'lime';
+      ctx.stroke();
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.fillText("Align face inside oval", ROI.x + ROI.w / 2, ROI.y + ROI.h + 20);
+    }
+
+    function gaussianWeight(bin, center, spread)
+    {
+      return Math.exp(-0.5 * Math.pow((bin - center) / spread, 2));
+    }
+
+    function processFrame()
+    {
+      if (video.readyState < 2) return;
+      ctx.drawImage(video, 0, 0, WIDTH, HEIGHT);
+      const frame = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+      let greenSum = 0;
+      let weightSum = 0;
+      for (const [x, y, w] of roiMask)
+      {
+        const i = (y * WIDTH + x) * 4;
+        greenSum += w * frame[i + 1];
+        weightSum += w;
+      }
+      const meanGreen = greenSum / weightSum;
+      signal.push(meanGreen);
+      if (signal.length > BUFFER_SIZE) signal.shift();
+
+      drawOverlay();
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      let avgBPM;
+      let avgRPM;
+      let sdevBPM;
+      let sdevRPM;
+
+      if (signal.length >= FFT_SIZE)
+      {
+        const segment = signal.slice(-FFT_SIZE);
+        const mean = segment.reduce((a, b) => a + b, 0) / FFT_SIZE;
+        const detrended = segment.map(v => v - mean);
+        const mag = fftMagReIm(detrended);
+
+        const hrStart = Math.floor(0.8 / (FPS / FFT_SIZE));
+        const hrEnd = Math.ceil(3.5 / (FPS / FFT_SIZE));
+        let hrMax = 0, hrBin = 0;
+        for (let i = hrStart; i <= hrEnd; i++)
+        {
+          const w = gaussianWeight(i, (hrStart + hrEnd) / 2, (hrEnd - hrStart) * 1);
+          if (w*mag[i] > hrMax) hrMax = w*mag[i], hrBin = i;
+        }
+        const hrFreq = hrBin * FPS / FFT_SIZE;
+        const bpm = hrFreq * 60;
+        bpmHistory.push(bpm);
+
+        const rrStart = Math.floor(0.15 / (FPS / FFT_SIZE));
+        const rrEnd = Math.ceil(0.4 / (FPS / FFT_SIZE));
+        let rrMax = 0, rrBin = 0;
+        for (let i = rrStart; i <= rrEnd; i++)
+        {
+          const w = gaussianWeight(i, (rrStart + rrEnd) / 2, (rrEnd - rrStart) * 1);
+          if (w*mag[i] > rrMax) rrMax = w*mag[i], rrBin = i;
+        }
+        const rrFreq = rrBin * FPS / FFT_SIZE;
+        const rpm = rrFreq * 60;
+        respHistory.push(rpm);
+
+        avgBPM = bpmHistory.reduce((a, b) => a + b, 0) / bpmHistory.length;
+        avgRPM = respHistory.reduce((a, b) => a + b, 0) / respHistory.length;
+        sdevBPM = Math.sqrt(bpmHistory.reduce((a,b)=>a+b**2,0)/bpmHistory.length-avgBPM**2);
+        sdevRPM = Math.sqrt(respHistory.reduce((a,b)=>a+b**2,0)/respHistory.length-avgRPM**2);
+
+        //info.textContent = `Time: ${elapsed}s | BPM: ${bpm.toFixed(1)} | Avg: ${avgBPM.toFixed(1)} | Resp: ${rpm.toFixed(1)} brpm | Avg: ${avgRPM.toFixed(1)} brpm`;
+        updateValues(bpm, rpm);
+      }
+      else
+      {
+        info.textContent = `Collecting data...`;
+      }
+      updateConicProgress(elapsed);
+
+      if (elapsed >= MEASUREMENT_DURATION_SEC)
+      {
+        clearInterval(measurementInterval);
+        info.textContent = "Measurement complete.";
+        updateValues(avgBPM, avgRPM);
+        updateSDEV(sdevBPM, sdevRPM);
+        if (heartDot) heartDot.stop();
+        if (respDot) respDot.stop();
+      }
+    }
+
+    async function initCamera()
+    {
+      roiMask = createOvalMask();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: WIDTH, height: HEIGHT } });
+      video.srcObject = stream;
+      video.onloadeddata = () =>
+      {
+        drawOverlay();
+        requestAnimationFrame(drawOverlay);
+        info.textContent = `Ready.`;
+        startBtn.disabled = false;
+      };
+    }
+
+    startBtn.addEventListener('click', () =>
+    {
+      startBtn.disabled = true;
+      signal = [];
+      bpmHistory = [];
+      respHistory = [];
+      startTime = Date.now();
+      measurementInterval = setInterval(() =>
+      {
+        processFrame();
+      }, 1000 / FPS);
+    });
+
+    function updateConicProgress(seconds)
+    {
+      const degrees = seconds * 6.0;
+      document.getElementById("circleProgress").style.background =
+      `conic-gradient(#0f0 0deg, #0f0 ${degrees}deg, #dde ${degrees}deg, #dde 360deg)`;
+      document.getElementById("circleProgress").innerText = `${seconds}s`;
+    }
+
+    function createPulsingDot(dotElem, getBPM)
+    {
+      let frameId = null;
+      let running = true;
+      let lastTimestamp = null;
+      let phase = 0;
+
+      function animate(timestamp)
+      {
+        if (!running) return;
+        if (lastTimestamp === null) lastTimestamp = timestamp;
+
+        const dt = (timestamp - lastTimestamp) / 1000; // seconds
+        lastTimestamp = timestamp;
+
+        const bpm = getBPM();
+        const freq = bpm / 60; // Hz
+
+        // Integrate phase smoothly
+        phase += 2 * Math.PI * freq * dt;
+        phase = phase % (2 * Math.PI);  // optional, to prevent float overflow
+
+        const scale = 1 + 0.5 * Math.sin(phase);
+        const opacity = 0.6 + 0.4 * Math.sin(phase);
+
+        dotElem.style.transform = `scale(${scale})`;
+        dotElem.style.opacity = `${opacity}`;
+
+        frameId = requestAnimationFrame(animate);
+      }
+
+      frameId = requestAnimationFrame(animate);
+
+      return {
+        stop: () =>
+        {
+          running = false;
+          if (frameId !== null) cancelAnimationFrame(frameId);
+          dotElem.style.transform = 'scale(1)';
+          dotElem.style.opacity = '0.6';
+        }
+      };
+    }
+
+    function updateValues(bpm, rpm)
+    {
+      // Clamp values to avoid flicker on bad frames
+      const hrBPM = Math.max(40, Math.min(240, bpm));
+      const rrRPM = Math.max(5, Math.min(30, rpm));
+
+      // Convert to animation duration (e.g., one pulse per beat)
+      const hrDuration = (60 / hrBPM).toFixed(2) + 's';
+      const rrDuration = (60 / rrRPM).toFixed(2) + 's';
+
+      // Apply to CSS
+      document.getElementById('heartDot').style.animationDuration = hrDuration;
+      document.getElementById('respDot').style.animationDuration = rrDuration;
+
+      document.getElementById('heartDot').innerText = bpm.toFixed(1);
+      document.getElementById('respDot').innerText = rpm.toFixed(1);
+
+      currentBPM = bpm;
+      currentRPM = rpm;
+    }
+    function updateSDEV(sdevBPM, sdevRPM)
+    {
+      document.getElementById("heartSD").innerHTML = "&plusmn;" + sdevBPM.toFixed(1);
+      document.getElementById("respSD").innerHTML = "&plusmn;" + sdevRPM.toFixed(1);
+    }
+
+    heartDot = createPulsingDot(document.getElementById('heartDot'), () => currentBPM);
+    respDot = createPulsingDot(document.getElementById('respDot'), () => currentRPM);
+    initCamera();
+  </script>
+
+
+
+</body></html>

@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rPPG Vital Signs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      margin: 0;
+      background: #0f172a;
+      font-family: 'Inter', sans-serif;
+      text-align: center;
+      min-height: 100vh;
+    }
+
+    body {
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 50%),
+        linear-gradient(180deg, #0f172a 0%, #0c1222 100%);
+      padding: 2rem 1rem;
+    }
+
+    .app {
+      background: rgba(30, 41, 59, 0.5);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      color: #fff;
+      width: 100%;
+      max-width: 800px;
+      margin: auto;
+      padding: 2rem;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .header {
+      margin-bottom: 1.5rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .logo-icon {
+      font-size: 2.5rem;
+      animation: heartbeat 1.5s ease-in-out infinite;
+    }
+
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      15% { transform: scale(1.15); }
+      30% { transform: scale(1); }
+      45% { transform: scale(1.1); }
+      60% { transform: scale(1); }
+    }
+
+    .logo h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+    }
+
+    #container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      margin: 1.5rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(99, 102, 241, 0.2);
+    }
+
+    video, canvas { position: absolute; top: 0; left: 0; }
+    video { z-index: 0; transform: scaleX(-1); }
+    canvas { z-index: 1; pointer-events: none; }
+
+    #info {
+      margin-top: 1.5rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #818cf8;
+    }
+
+    #startBtn {
+      margin-top: 1rem;
+      padding: 1rem 2rem;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    #startBtn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+    }
+
+    #startBtn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #pulseContainer {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+    }
+
+    .metric-card {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1rem 1.5rem;
+      min-width: 120px;
+    }
+
+    .pulseLbl {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: #64748b;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .pulse-dot {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      opacity: 0.9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      transform: scale(1);
+      margin: 0 auto;
+      box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+    }
+
+    .valSD {
+      font-size: 0.75rem;
+      margin-top: 0.5rem;
+      height: 14px;
+      color: #64748b;
+    }
+
+    #respDot {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      box-shadow: 0 4px 15px rgba(6, 182, 212, 0.3);
+    }
+
+    #circleProgress {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: conic-gradient(#10b981 0deg, #10b981 0deg, rgba(255,255,255,0.1) 0deg, rgba(255,255,255,0.1) 360deg);
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+    }
+
+    .disclaimer {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      border-radius: 12px;
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.6;
+    }
+
+    .disclaimer strong {
+      color: #f59e0b;
+    }
+
+    @media (max-width: 700px) {
+      #container {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 4/3;
+      }
+      video, canvas {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+ <div class="app">
+  <header class="header">
+    <div class="logo">
+      <span class="logo-icon">💓</span>
+      <h1>rPPG Vital Signs</h1>
+    </div>
+    <p class="subtitle">Remote Photoplethysmography Demo</p>
+  </header>
+
+  <div id="container">
+    <video id="video" width="640" height="480" autoplay muted></video>
+    <canvas id="overlay" width="640" height="480"></canvas>
+  </div>
+
+  <button id="startBtn" disabled>Start Measurement</button>
+
+  <div id="pulseContainer">
+    <div class="metric-card">
+      <div class="pulseLbl">Time</div>
+      <div id="circleProgress">--.-s</div>
+    </div>
+    <div class="metric-card">
+      <div class="pulseLbl">Heart Rate</div>
+      <div id="heartDot" class="pulse-dot" title="Heart rate">--.-</div>
+      <div class="valSD" id="heartSD"></div>
+    </div>
+    <div class="metric-card">
+      <div class="pulseLbl">Respiration</div>
+      <div id="respDot" class="pulse-dot" title="Respiration rate">--.-</div>
+      <div class="valSD" id="respSD"></div>
+    </div>
+  </div>
+
+  <div id="info">Initializing camera...</div>
+
+  <div class="disclaimer">
+    <strong>⚠️ Disclaimer:</strong> This is a technology demonstration only, not a medical device.
+    Measurements are uncalibrated and should not be used for clinical purposes.
+    All processing occurs locally in your browser.
+  </div>
+ </div>
+
+  <script>
+    // === VERBATIM ALGORITHM FROM vttoth.com/RPPG/ ===
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const info = document.getElementById('info');
+    const startBtn = document.getElementById('startBtn');
+
+    const WIDTH = 640, HEIGHT = 480;
+    const ROI = { x: 200, y: 100, w: 240, h: 280 };
+    const FPS = 30;
+    const BUFFER_SIZE = 600;
+    const FFT_SIZE = 512;
+    const MEASUREMENT_DURATION_SEC = 60;
+
+    let signal = [];
+    let roiMask = [];
+    let bpmHistory = [];
+    let respHistory = [];
+    let measurementInterval = null;
+    let startTime = null;
+    let currentBPM = 0;
+    let currentRPM = 0;
+    let heartDot = null;
+    let respDot = null;
+
+    function createOvalMask()
+    {
+      const pixels = [];
+      for (let y = ROI.y; y < ROI.y + ROI.h; y++)
+      {
+        for (let x = ROI.x; x < ROI.x + ROI.w; x++)
+        {
+          const dx = (x - (ROI.x + ROI.w / 2)) / (ROI.w / 2);
+          const dy = (y - (ROI.y + ROI.h / 2)) / (ROI.h / 2);
+          const r2 = dx * dx + dy * dy;
+          if (r2 <= 1)
+          {
+            const w = 0.5 + 0.5 * Math.exp(-4 * r2);
+            pixels.push([x, y, w]);
+          }
+        }
+      }
+      return pixels;
+    }
+
+    function fftMagReIm(re)
+    {
+      const N = re.length;
+      const im = new Array(N).fill(0);
+
+      function bitReverse(arr)
+      {
+        const n = arr.length, bits = Math.log2(n);
+        for (let i = 0; i < n; i++)
+        {
+          const j = parseInt(i.toString(2).padStart(bits, '0').split('').reverse().join(''), 2);
+          if (j > i) [arr[i], arr[j]] = [arr[j], arr[i]], [im[i], im[j]] = [im[j], im[i]];
+        }
+      }
+
+      bitReverse(re);
+
+      for (let len = 2; len <= N; len *= 2)
+      {
+        const angle = -2 * Math.PI / len;
+        for (let i = 0; i < N; i += len)
+        {
+          for (let j = 0; j < len / 2; j++)
+          {
+            const k = i + j;
+            const l = i + j + len / 2;
+            const tRe =  Math.cos(angle * j) * re[l] - Math.sin(angle * j) * im[l];
+            const tIm =  Math.sin(angle * j) * re[l] + Math.cos(angle * j) * im[l];
+            re[l] = re[k] - tRe;
+            im[l] = im[k] - tIm;
+            re[k] += tRe;
+            im[k] += tIm;
+          }
+        }
+      }
+
+      return re.map((r, i) => Math.sqrt(r * r + im[i] * im[i]));
+    }
+
+    function drawOverlay()
+    {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle = 'rgba(0,255,0,0.1)';
+      ctx.beginPath();
+      ctx.ellipse(ROI.x + ROI.w / 2, ROI.y + ROI.h / 2, ROI.w / 2, ROI.h / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'lime';
+      ctx.stroke();
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.fillText("Align face inside oval", ROI.x + ROI.w / 2, ROI.y + ROI.h + 20);
+    }
+
+    function gaussianWeight(bin, center, spread)
+    {
+      return Math.exp(-0.5 * Math.pow((bin - center) / spread, 2));
+    }
+
+    function processFrame()
+    {
+      if (video.readyState < 2) return;
+      ctx.drawImage(video, 0, 0, WIDTH, HEIGHT);
+      const frame = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
+      let greenSum = 0;
+      let weightSum = 0;
+      for (const [x, y, w] of roiMask)
+      {
+        const i = (y * WIDTH + x) * 4;
+        greenSum += w * frame[i + 1];
+        weightSum += w;
+      }
+      const meanGreen = greenSum / weightSum;
+      signal.push(meanGreen);
+      if (signal.length > BUFFER_SIZE) signal.shift();
+
+      drawOverlay();
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      let avgBPM;
+      let avgRPM;
+      let sdevBPM;
+      let sdevRPM;
+
+      if (signal.length >= FFT_SIZE)
+      {
+        const segment = signal.slice(-FFT_SIZE);
+        const mean = segment.reduce((a, b) => a + b, 0) / FFT_SIZE;
+        const detrended = segment.map(v => v - mean);
+        const mag = fftMagReIm(detrended);
+
+        const hrStart = Math.floor(0.8 / (FPS / FFT_SIZE));
+        const hrEnd = Math.ceil(3.5 / (FPS / FFT_SIZE));
+        let hrMax = 0, hrBin = 0;
+        for (let i = hrStart; i <= hrEnd; i++)
+        {
+          const w = gaussianWeight(i, (hrStart + hrEnd) / 2, (hrEnd - hrStart) * 1);
+          if (w*mag[i] > hrMax) hrMax = w*mag[i], hrBin = i;
+        }
+        const hrFreq = hrBin * FPS / FFT_SIZE;
+        const bpm = hrFreq * 60;
+        bpmHistory.push(bpm);
+
+        const rrStart = Math.floor(0.15 / (FPS / FFT_SIZE));
+        const rrEnd = Math.ceil(0.4 / (FPS / FFT_SIZE));
+        let rrMax = 0, rrBin = 0;
+        for (let i = rrStart; i <= rrEnd; i++)
+        {
+          const w = gaussianWeight(i, (rrStart + rrEnd) / 2, (rrEnd - rrStart) * 1);
+          if (w*mag[i] > rrMax) rrMax = w*mag[i], rrBin = i;
+        }
+        const rrFreq = rrBin * FPS / FFT_SIZE;
+        const rpm = rrFreq * 60;
+        respHistory.push(rpm);
+
+        avgBPM = bpmHistory.reduce((a, b) => a + b, 0) / bpmHistory.length;
+        avgRPM = respHistory.reduce((a, b) => a + b, 0) / respHistory.length;
+        sdevBPM = Math.sqrt(bpmHistory.reduce((a,b)=>a+b**2,0)/bpmHistory.length-avgBPM**2);
+        sdevRPM = Math.sqrt(respHistory.reduce((a,b)=>a+b**2,0)/respHistory.length-avgRPM**2);
+
+        updateValues(bpm, rpm);
+        info.textContent = "Measuring...";
+      }
+      else
+      {
+        info.textContent = `Collecting data...`;
+      }
+      updateConicProgress(elapsed);
+
+      if (elapsed >= MEASUREMENT_DURATION_SEC)
+      {
+        clearInterval(measurementInterval);
+        info.textContent = "Measurement complete.";
+        updateValues(avgBPM, avgRPM);
+        updateSDEV(sdevBPM, sdevRPM);
+        if (heartDot) heartDot.stop();
+        if (respDot) respDot.stop();
+        startBtn.disabled = false;
+        startBtn.textContent = "New Measurement";
+      }
+    }
+
+    async function initCamera()
+    {
+      roiMask = createOvalMask();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: WIDTH, height: HEIGHT } });
+      video.srcObject = stream;
+      video.onloadeddata = () =>
+      {
+        drawOverlay();
+        requestAnimationFrame(drawOverlay);
+        info.textContent = `Ready.`;
+        startBtn.disabled = false;
+      };
+    }
+
+    startBtn.addEventListener('click', () =>
+    {
+      startBtn.disabled = true;
+      signal = [];
+      bpmHistory = [];
+      respHistory = [];
+      startTime = Date.now();
+      document.getElementById("heartSD").innerHTML = "";
+      document.getElementById("respSD").innerHTML = "";
+      measurementInterval = setInterval(() =>
+      {
+        processFrame();
+      }, 1000 / FPS);
+    });
+
+    function updateConicProgress(seconds)
+    {
+      const degrees = seconds * 6.0;
+      document.getElementById("circleProgress").style.background =
+      `conic-gradient(#10b981 0deg, #10b981 ${degrees}deg, rgba(255,255,255,0.1) ${degrees}deg, rgba(255,255,255,0.1) 360deg)`;
+      document.getElementById("circleProgress").innerText = `${seconds}s`;
+    }
+
+    function createPulsingDot(dotElem, getBPM)
+    {
+      let frameId = null;
+      let running = true;
+      let lastTimestamp = null;
+      let phase = 0;
+
+      function animate(timestamp)
+      {
+        if (!running) return;
+        if (lastTimestamp === null) lastTimestamp = timestamp;
+
+        const dt = (timestamp - lastTimestamp) / 1000;
+        lastTimestamp = timestamp;
+
+        const bpm = getBPM();
+        const freq = bpm / 60;
+
+        phase += 2 * Math.PI * freq * dt;
+        phase = phase % (2 * Math.PI);
+
+        const scale = 1 + 0.3 * Math.sin(phase);
+        const opacity = 0.7 + 0.3 * Math.sin(phase);
+
+        dotElem.style.transform = `scale(${scale})`;
+        dotElem.style.opacity = `${opacity}`;
+
+        frameId = requestAnimationFrame(animate);
+      }
+
+      frameId = requestAnimationFrame(animate);
+
+      return {
+        stop: () =>
+        {
+          running = false;
+          if (frameId !== null) cancelAnimationFrame(frameId);
+          dotElem.style.transform = 'scale(1)';
+          dotElem.style.opacity = '0.9';
+        }
+      };
+    }
+
+    function updateValues(bpm, rpm)
+    {
+      const hrBPM = Math.max(40, Math.min(240, bpm));
+      const rrRPM = Math.max(5, Math.min(30, rpm));
+
+      const hrDuration = (60 / hrBPM).toFixed(2) + 's';
+      const rrDuration = (60 / rrRPM).toFixed(2) + 's';
+
+      document.getElementById('heartDot').style.animationDuration = hrDuration;
+      document.getElementById('respDot').style.animationDuration = rrDuration;
+
+      document.getElementById('heartDot').innerText = bpm.toFixed(1);
+      document.getElementById('respDot').innerText = rpm.toFixed(1);
+
+      currentBPM = bpm;
+      currentRPM = rpm;
+    }
+
+    function updateSDEV(sdevBPM, sdevRPM)
+    {
+      document.getElementById("heartSD").innerHTML = "±" + sdevBPM.toFixed(1);
+      document.getElementById("respSD").innerHTML = "±" + sdevRPM.toFixed(1);
+    }
+
+    heartDot = createPulsingDot(document.getElementById('heartDot'), () => currentBPM);
+    respDot = createPulsingDot(document.getElementById('respDot'), () => currentRPM);
+    initCamera();
+  </script>
+</body>
+</html>

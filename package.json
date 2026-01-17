@@ -1,0 +1,30 @@
+{
+  "name": "rppg-vital-signs",
+  "version": "1.0.0",
+  "description": "Remote Photoplethysmography (rPPG) Demo - Contactless Heart Rate and Respiration Monitoring",
+  "main": "index.html",
+  "scripts": {
+    "serve": "npx serve .",
+    "start": "npx serve ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/rppg-vital-signs.git"
+  },
+  "keywords": [
+    "rppg",
+    "photoplethysmography",
+    "heart-rate",
+    "vital-signs",
+    "webcam",
+    "health",
+    "fft",
+    "signal-processing"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/anthropics/rppg-vital-signs/issues"
+  },
+  "homepage": "https://github.com/anthropics/rppg-vital-signs#readme"
+}
